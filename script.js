@@ -1,4 +1,4 @@
-const API_BASE = "https://chatboot-k4o9.onrender.com";
+const API_BASE = "https://wchat-v4sn.onrender.com";
 
 function setStatus(message, isError = false) {
   const status = document.getElementById("status");
