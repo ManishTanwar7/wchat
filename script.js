@@ -23,13 +23,13 @@ function escapeHtml(text) {
     .replaceAll("'", "&#39;");
 }
 
-function messageHTML(msg) {
+function messageHTML(msg, currentSender) {
   const sender = escapeHtml(msg.sender || "");
   const receiver = escapeHtml(msg.receiver || "");
   const type = escapeHtml((msg.type || "text").toUpperCase());
   const content = escapeHtml(msg.content || "");
   const time = escapeHtml(msg.time || "");
-  const isSent = sender.toLowerCase() === "me";
+  const isSent = sender.toLowerCase() === currentSender.toLowerCase();
 
   return `
     <div class="message ${isSent ? "sent" : "received"}">
@@ -41,7 +41,7 @@ function messageHTML(msg) {
   `;
 }
 
-function renderMessages(messages) {
+function renderMessages(messages, currentSender) {
   const chatBody = document.getElementById("chatBody");
 
   if (!messages || messages.length === 0) {
@@ -49,22 +49,33 @@ function renderMessages(messages) {
     return;
   }
 
-  chatBody.innerHTML = messages.map(messageHTML).join("");
+  chatBody.innerHTML = messages.map(msg => messageHTML(msg, currentSender)).join("");
   chatBody.scrollTop = chatBody.scrollHeight;
 }
 
 async function loadMessages() {
+  const sender = document.getElementById("sender").value.trim();
+  const receiver = document.getElementById("receiver").value.trim();
+
+  if (!sender || !receiver) {
+    setStatus("Enter sender and receiver to load private chat", true);
+    return;
+  }
+
   try {
-    setStatus("Loading messages...");
-    const response = await fetch(`${API_BASE}/api/messages`);
+    setStatus("Loading private chat...");
+    const response = await fetch(
+      `${API_BASE}/api/messages?sender=${encodeURIComponent(sender)}&receiver=${encodeURIComponent(receiver)}`
+    );
+
     const data = await response.json();
 
     if (!response.ok || data.status !== "success") {
       throw new Error(data.message || "Failed to load messages");
     }
 
-    renderMessages(data.messages || []);
-    setStatus("Messages loaded successfully");
+    renderMessages(data.messages || [], sender);
+    setStatus("Private chat loaded successfully");
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -98,12 +109,10 @@ async function sendMessage() {
       throw new Error(data.message || "Failed to send message");
     }
 
-    renderMessages(data.messages || []);
     document.getElementById("content").value = "";
+    await loadMessages();
     setStatus("Message sent successfully");
   } catch (error) {
     setStatus(error.message, true);
   }
 }
-
-window.onload = loadMessages;
