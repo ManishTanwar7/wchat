@@ -33,6 +33,25 @@ string escapeJson(const string& s) {
     return out;
 }
 
+string decodeURL(const string& str) {
+    string result;
+    for (size_t i = 0; i < str.length(); i++) {
+        if (str[i] == '%') {
+            if (i + 2 < str.length()) {
+                string hex = str.substr(i + 1, 2);
+                char ch = static_cast<char>(strtol(hex.c_str(), nullptr, 16));
+                result += ch;
+                i += 2;
+            }
+        } else if (str[i] == '+') {
+            result += ' ';
+        } else {
+            result += str[i];
+        }
+    }
+    return result;
+}
+
 string getCurrentTimeString() {
     time_t now = time(nullptr);
     tm* local = localtime(&now);
@@ -63,6 +82,34 @@ string extractJsonValue(const string& body, const string& key) {
     return body.substr(firstQuote + 1, secondQuote - firstQuote - 1);
 }
 
+string getQueryParam(const string& path, const string& key) {
+    size_t qPos = path.find('?');
+    if (qPos == string::npos) return "";
+
+    string query = path.substr(qPos + 1);
+    string search = key + "=";
+
+    size_t keyPos = query.find(search);
+    if (keyPos == string::npos) return "";
+
+    size_t valueStart = keyPos + search.length();
+    size_t valueEnd = query.find('&', valueStart);
+
+    string value = (valueEnd == string::npos)
+        ? query.substr(valueStart)
+        : query.substr(valueStart, valueEnd - valueStart);
+
+    return decodeURL(value);
+}
+
+string getRequestPath(const string& request) {
+    size_t firstSpace = request.find(' ');
+    if (firstSpace == string::npos) return "";
+    size_t secondSpace = request.find(' ', firstSpace + 1);
+    if (secondSpace == string::npos) return "";
+    return request.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+}
+
 class Message {
 protected:
     string sender;
@@ -78,6 +125,9 @@ public:
 
     virtual string getType() const = 0;
     virtual string getDisplayContent() const = 0;
+
+    string getSender() const { return sender; }
+    string getReceiver() const { return receiver; }
 
     virtual string toJson() const {
         stringstream ss;
@@ -151,15 +201,29 @@ public:
         count++;
     }
 
-    string toJsonArray() const {
+    string toJsonArrayForUsers(const string& user1, const string& user2) const {
         stringstream ss;
         ss << "[";
         Node* current = head;
+        bool first = true;
+
         while (current != nullptr) {
-            ss << current->data->toJson();
-            if (current->next != nullptr) ss << ",";
+            string s = current->data->getSender();
+            string r = current->data->getReceiver();
+
+            bool match =
+                (s == user1 && r == user2) ||
+                (s == user2 && r == user1);
+
+            if (match) {
+                if (!first) ss << ",";
+                ss << current->data->toJson();
+                first = false;
+            }
+
             current = current->next;
         }
+
         ss << "]";
         return ss.str();
     }
@@ -205,8 +269,8 @@ public:
         messages.insert(msg);
     }
 
-    string getAllMessagesJson() const {
-        return messages.toJsonArray();
+    string getPrivateMessagesJson(const string& user1, const string& user2) const {
+        return messages.toJsonArrayForUsers(user1, user2);
     }
 
     int totalMessages() const {
@@ -246,7 +310,6 @@ string makeSuccessJson(const string& message, const string& messagesJson) {
     ss << "{"
        << "\"status\":\"success\","
        << "\"message\":\"" << escapeJson(message) << "\","
-       << "\"count\":" << chatManager.totalMessages() << ","
        << "\"messages\":" << messagesJson
        << "}";
     return ss.str();
@@ -257,17 +320,29 @@ string handleRequest(const string& request) {
         return makeOptionsResponse();
     }
 
-    if (request.find("GET / ") == 0 || request.find("GET / HTTP") == 0) {
+    string path = getRequestPath(request);
+
+    if (path == "/") {
         string body = "{\"status\":\"success\",\"message\":\"C++ WhatsApp backend is running\"}";
         return makeHttpResponse(body);
     }
 
-    if (request.find("GET /api/messages ") == 0 || request.find("GET /api/messages HTTP") == 0) {
-        string body = makeSuccessJson("Messages fetched successfully.", chatManager.getAllMessagesJson());
+    if (path.find("/api/messages") == 0 && request.find("GET ") == 0) {
+        string sender = getQueryParam(path, "sender");
+        string receiver = getQueryParam(path, "receiver");
+
+        if (sender.empty() || receiver.empty()) {
+            return makeHttpResponse(makeErrorJson("sender and receiver are required."), "400 Bad Request");
+        }
+
+        string body = makeSuccessJson(
+            "Private messages fetched successfully.",
+            chatManager.getPrivateMessagesJson(sender, receiver)
+        );
         return makeHttpResponse(body);
     }
 
-    if (request.find("POST /api/messages ") == 0 || request.find("POST /api/messages HTTP") == 0) {
+    if (request.find("POST /api/messages ") == 0 || request.find("POST /api/messages?") == 0) {
         size_t bodyPos = request.find("\r\n\r\n");
         if (bodyPos == string::npos) {
             return makeHttpResponse(makeErrorJson("Invalid request body."), "400 Bad Request");
@@ -283,7 +358,10 @@ string handleRequest(const string& request) {
 
             chatManager.addMessage(sender, receiver, type, content);
 
-            string responseBody = makeSuccessJson("Message added successfully.", chatManager.getAllMessagesJson());
+            string responseBody = makeSuccessJson(
+                "Message added successfully.",
+                chatManager.getPrivateMessagesJson(sender, receiver)
+            );
             return makeHttpResponse(responseBody, "200 OK");
         } catch (const exception& e) {
             return makeHttpResponse(makeErrorJson(e.what()), "400 Bad Request");
