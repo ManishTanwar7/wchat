@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp Chat Bot</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>Chat Form</h2>
+        <p>C++ Backend Project</p>
+      </div>
+
+      <div class="form-box">
+        <label for="sender">Sender Name</label>
+        <input type="text" id="sender" placeholder="Enter sender name" />
+
+        <label for="receiver">Receiver Name</label>
+        <input type="text" id="receiver" placeholder="Enter receiver name" />
+
+        <label for="type">Message Type</label>
+        <select id="type">
+          <option value="text">Text Message</option>
+          <option value="image">Image Message</option>
+          <option value="voice">Voice Message</option>
+        </select>
+
+        <label for="content">Message / URL / Voice Note</label>
+        <textarea id="content" placeholder="Type your message here..."></textarea>
+
+        <button class="send-btn" onclick="sendMessage()">Send Message</button>
+        <button class="refresh-btn" onclick="loadMessages()">Refresh Chat</button>
+        <button class="clear-btn" onclick="clearFields()">Clear Form</button>
+
+        <div id="status">Ready</div>
+      </div>
+    </aside>
+
+    <main class="chat-section">
+      <div class="chat-header">
+        <div>
+          <h2>WhatsApp Chat Bot</h2>
+          <span>Simple WhatsApp-style UI with C++ backend</span>
+        </div>
+      </div>
+
+      <div class="chat-body" id="chatBody">
+        <div class="empty-chat">No messages yet.</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
