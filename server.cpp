@@ -36,13 +36,11 @@ string escapeJson(const string& s) {
 string decodeURL(const string& str) {
     string result;
     for (size_t i = 0; i < str.length(); i++) {
-        if (str[i] == '%') {
-            if (i + 2 < str.length()) {
-                string hex = str.substr(i + 1, 2);
-                char ch = static_cast<char>(strtol(hex.c_str(), nullptr, 16));
-                result += ch;
-                i += 2;
-            }
+        if (str[i] == '%' && i + 2 < str.length()) {
+            string hex = str.substr(i + 1, 2);
+            char ch = static_cast<char>(strtol(hex.c_str(), nullptr, 16));
+            result += ch;
+            i += 2;
         } else if (str[i] == '+') {
             result += ' ';
         } else {
@@ -82,32 +80,35 @@ string extractJsonValue(const string& body, const string& key) {
     return body.substr(firstQuote + 1, secondQuote - firstQuote - 1);
 }
 
-string getQueryParam(const string& path, const string& key) {
-    size_t qPos = path.find('?');
-    if (qPos == string::npos) return "";
-
-    string query = path.substr(qPos + 1);
-    string search = key + "=";
-
-    size_t keyPos = query.find(search);
-    if (keyPos == string::npos) return "";
-
-    size_t valueStart = keyPos + search.length();
-    size_t valueEnd = query.find('&', valueStart);
-
-    string value = (valueEnd == string::npos)
-        ? query.substr(valueStart)
-        : query.substr(valueStart, valueEnd - valueStart);
-
-    return decodeURL(value);
-}
-
 string getRequestPath(const string& request) {
     size_t firstSpace = request.find(' ');
     if (firstSpace == string::npos) return "";
     size_t secondSpace = request.find(' ', firstSpace + 1);
     if (secondSpace == string::npos) return "";
     return request.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+}
+
+string getQueryParam(const string& path, const string& key) {
+    size_t qPos = path.find('?');
+    if (qPos == string::npos) return "";
+
+    string query = path.substr(qPos + 1);
+    string searchKey = key + "=";
+
+    size_t keyPos = query.find(searchKey);
+    if (keyPos == string::npos) return "";
+
+    size_t valueStart = keyPos + searchKey.length();
+    size_t valueEnd = query.find('&', valueStart);
+
+    string value;
+    if (valueEnd == string::npos) {
+        value = query.substr(valueStart);
+    } else {
+        value = query.substr(valueStart, valueEnd - valueStart);
+    }
+
+    return decodeURL(value);
 }
 
 class Message {
@@ -176,10 +177,9 @@ class MessageLinkedList {
 private:
     Node* head;
     Node* tail;
-    int count;
 
 public:
-    MessageLinkedList() : head(nullptr), tail(nullptr), count(0) {}
+    MessageLinkedList() : head(nullptr), tail(nullptr) {}
 
     ~MessageLinkedList() {
         Node* current = head;
@@ -198,22 +198,19 @@ public:
             tail->next = newNode;
             tail = newNode;
         }
-        count++;
     }
 
     string toJsonArrayForUsers(const string& user1, const string& user2) const {
         stringstream ss;
         ss << "[";
-        Node* current = head;
         bool first = true;
 
+        Node* current = head;
         while (current != nullptr) {
             string s = current->data->getSender();
             string r = current->data->getReceiver();
 
-            bool match =
-                (s == user1 && r == user2) ||
-                (s == user2 && r == user1);
+            bool match = (s == user1 && r == user2) || (s == user2 && r == user1);
 
             if (match) {
                 if (!first) ss << ",";
@@ -227,10 +224,6 @@ public:
         ss << "]";
         return ss.str();
     }
-
-    int size() const {
-        return count;
-    }
 };
 
 class ChatManager {
@@ -242,29 +235,20 @@ private:
         if (trim(receiver).empty()) throw invalid_argument("Receiver name cannot be empty.");
         if (trim(type).empty()) throw invalid_argument("Message type cannot be empty.");
         if (trim(content).empty()) throw invalid_argument("Message content cannot be empty.");
-        if (sender.length() > 50 || receiver.length() > 50) throw invalid_argument("Name is too long.");
-        if (content.length() > 500) throw invalid_argument("Message too long. Max 500 characters.");
+        if (sender.length() > 50 || receiver.length() > 50) throw invalid_argument("Name too long.");
+        if (content.length() > 500) throw invalid_argument("Message too long.");
     }
 
 public:
-    void addMessage(const string& sender, const string& receiver, const string& content) {
-        addMessage(sender, receiver, "text", content);
-    }
-
     void addMessage(const string& sender, const string& receiver, const string& type, const string& content) {
         validateInput(sender, receiver, type, content);
 
         Message* msg = nullptr;
 
-        if (type == "text") {
-            msg = new TextMessage(sender, receiver, content);
-        } else if (type == "image") {
-            msg = new ImageMessage(sender, receiver, content);
-        } else if (type == "voice") {
-            msg = new VoiceMessage(sender, receiver, content);
-        } else {
-            throw invalid_argument("Invalid message type.");
-        }
+        if (type == "text") msg = new TextMessage(sender, receiver, content);
+        else if (type == "image") msg = new ImageMessage(sender, receiver, content);
+        else if (type == "voice") msg = new VoiceMessage(sender, receiver, content);
+        else throw invalid_argument("Invalid message type.");
 
         messages.insert(msg);
     }
@@ -272,18 +256,14 @@ public:
     string getPrivateMessagesJson(const string& user1, const string& user2) const {
         return messages.toJsonArrayForUsers(user1, user2);
     }
-
-    int totalMessages() const {
-        return messages.size();
-    }
 };
 
 ChatManager chatManager;
 
-string makeHttpResponse(const string& body, const string& status = "200 OK", const string& contentType = "application/json") {
+string makeHttpResponse(const string& body, const string& status = "200 OK") {
     stringstream ss;
     ss << "HTTP/1.1 " << status << "\r\n"
-       << "Content-Type: " << contentType << "\r\n"
+       << "Content-Type: application/json\r\n"
        << "Access-Control-Allow-Origin: *\r\n"
        << "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
        << "Access-Control-Allow-Headers: Content-Type\r\n"
@@ -306,13 +286,7 @@ string makeErrorJson(const string& message) {
 }
 
 string makeSuccessJson(const string& message, const string& messagesJson) {
-    stringstream ss;
-    ss << "{"
-       << "\"status\":\"success\","
-       << "\"message\":\"" << escapeJson(message) << "\","
-       << "\"messages\":" << messagesJson
-       << "}";
-    return ss.str();
+    return "{\"status\":\"success\",\"message\":\"" + escapeJson(message) + "\",\"messages\":" + messagesJson + "}";
 }
 
 string handleRequest(const string& request) {
@@ -323,8 +297,7 @@ string handleRequest(const string& request) {
     string path = getRequestPath(request);
 
     if (path == "/") {
-        string body = "{\"status\":\"success\",\"message\":\"C++ WhatsApp backend is running\"}";
-        return makeHttpResponse(body);
+        return makeHttpResponse("{\"status\":\"success\",\"message\":\"C++ WhatsApp backend is running\"}");
     }
 
     if (path.find("/api/messages") == 0 && request.find("GET ") == 0) {
@@ -342,7 +315,7 @@ string handleRequest(const string& request) {
         return makeHttpResponse(body);
     }
 
-    if (request.find("POST /api/messages ") == 0 || request.find("POST /api/messages?") == 0) {
+    if (request.find("POST /api/messages ") == 0) {
         size_t bodyPos = request.find("\r\n\r\n");
         if (bodyPos == string::npos) {
             return makeHttpResponse(makeErrorJson("Invalid request body."), "400 Bad Request");
@@ -362,7 +335,8 @@ string handleRequest(const string& request) {
                 "Message added successfully.",
                 chatManager.getPrivateMessagesJson(sender, receiver)
             );
-            return makeHttpResponse(responseBody, "200 OK");
+
+            return makeHttpResponse(responseBody);
         } catch (const exception& e) {
             return makeHttpResponse(makeErrorJson(e.what()), "400 Bad Request");
         }
@@ -374,13 +348,11 @@ string handleRequest(const string& request) {
 int main() {
     int port = 10000;
     const char* envPort = getenv("PORT");
-    if (envPort != nullptr) {
-        port = atoi(envPort);
-    }
+    if (envPort != nullptr) port = atoi(envPort);
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
-        cerr << "Socket creation failed.\n";
+        cerr << "Socket creation failed\n";
         return 1;
     }
 
@@ -393,13 +365,13 @@ int main() {
     address.sin_port = htons(port);
 
     if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
-        cerr << "Bind failed.\n";
+        cerr << "Bind failed\n";
         close(server_fd);
         return 1;
     }
 
     if (listen(server_fd, 10) < 0) {
-        cerr << "Listen failed.\n";
+        cerr << "Listen failed\n";
         close(server_fd);
         return 1;
     }
@@ -411,9 +383,7 @@ int main() {
         socklen_t client_len = sizeof(client_addr);
 
         int client_socket = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);
-        if (client_socket < 0) {
-            continue;
-        }
+        if (client_socket < 0) continue;
 
         char buffer[16384];
         int bytesRead = read(client_socket, buffer, sizeof(buffer) - 1);
