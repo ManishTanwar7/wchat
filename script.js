@@ -1,5 +1,7 @@
 const API_BASE = "https://wchat-v4sn.onrender.com";
 
+let autoRefreshInterval = null;
+
 function setStatus(message, isError = false) {
   const status = document.getElementById("status");
   status.textContent = message;
@@ -11,6 +13,7 @@ function clearFields() {
   document.getElementById("receiver").value = "";
   document.getElementById("type").value = "text";
   document.getElementById("content").value = "";
+  document.getElementById("chatBody").innerHTML = `<div class="empty-chat">No messages yet.</div>`;
   setStatus("Form cleared");
 }
 
@@ -29,6 +32,7 @@ function messageHTML(msg, currentSender) {
   const type = escapeHtml((msg.type || "text").toUpperCase());
   const content = escapeHtml(msg.content || "");
   const time = escapeHtml(msg.time || "");
+
   const isSent = sender.toLowerCase() === currentSender.toLowerCase();
 
   return `
@@ -53,17 +57,18 @@ function renderMessages(messages, currentSender) {
   chatBody.scrollTop = chatBody.scrollHeight;
 }
 
-async function loadMessages() {
+async function loadMessages(showStatus = true) {
   const sender = document.getElementById("sender").value.trim();
   const receiver = document.getElementById("receiver").value.trim();
 
   if (!sender || !receiver) {
-    setStatus("Enter sender and receiver to load private chat", true);
+    if (showStatus) setStatus("Enter sender and receiver first", true);
     return;
   }
 
   try {
-    setStatus("Loading private chat...");
+    if (showStatus) setStatus("Loading chat...");
+
     const response = await fetch(
       `${API_BASE}/api/messages?sender=${encodeURIComponent(sender)}&receiver=${encodeURIComponent(receiver)}`
     );
@@ -75,9 +80,10 @@ async function loadMessages() {
     }
 
     renderMessages(data.messages || [], sender);
-    setStatus("Private chat loaded successfully");
+
+    if (showStatus) setStatus("Chat loaded");
   } catch (error) {
-    setStatus(error.message, true);
+    if (showStatus) setStatus(error.message, true);
   }
 }
 
@@ -110,9 +116,28 @@ async function sendMessage() {
     }
 
     document.getElementById("content").value = "";
-    await loadMessages();
+    renderMessages(data.messages || [], sender);
     setStatus("Message sent successfully");
   } catch (error) {
     setStatus(error.message, true);
   }
 }
+
+function startAutoRefresh() {
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+  }
+
+  autoRefreshInterval = setInterval(() => {
+    const sender = document.getElementById("sender").value.trim();
+    const receiver = document.getElementById("receiver").value.trim();
+
+    if (sender && receiver) {
+      loadMessages(false);
+    }
+  }, 2000);
+}
+
+window.onload = function () {
+  startAutoRefresh();
+};
